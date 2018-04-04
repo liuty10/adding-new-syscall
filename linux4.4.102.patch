@@ -1,0 +1,129 @@
+diff -Nur linux-4.4.102/arch/x86/entry/syscalls/syscall_64.tbl linux-4.4.102-new/arch/x86/entry/syscalls/syscall_64.tbl
+--- linux-4.4.102/arch/x86/entry/syscalls/syscall_64.tbl	2017-11-24 18:26:29.000000000 +0800
++++ linux-4.4.102-new/arch/x86/entry/syscalls/syscall_64.tbl	2018-03-28 06:38:19.479416374 +0800
+@@ -332,6 +332,7 @@
+ 323	common	userfaultfd		sys_userfaultfd
+ 324	common	membarrier		sys_membarrier
+ 325	common	mlock2			sys_mlock2
++326	64	getproctimes		sys_getproctimes
+ 
+ #
+ # x32-specific system call numbers start at 512 to avoid cache impact
+diff -Nur linux-4.4.102/include/linux/syscalls.h linux-4.4.102-new/include/linux/syscalls.h
+--- linux-4.4.102/include/linux/syscalls.h	2017-11-24 18:26:29.000000000 +0800
++++ linux-4.4.102-new/include/linux/syscalls.h	2018-03-28 06:51:45.072256714 +0800
+@@ -80,6 +80,22 @@
+ #include <linux/key.h>
+ #include <trace/syscall.h>
+ 
++struct proc_time{
++	pid_t pid;
++	//char name[16];
++	//unsigned long start_time;
++	unsigned long real_time;
++	//unsigned long user_time;
++	//unsigned long sys_time;
++};
++
++struct proctimes{
++   	struct proc_time proc;
++	//struct proc_time parent_proc;
++	//struct proc_time oldest_child_proc;
++};
++
++
+ /*
+  * __MAP - apply a macro to syscall arguments
+  * __MAP(n, m, t1, a1, t2, a2, ..., tn, an) will expand to
+@@ -888,5 +904,6 @@
+ asmlinkage long sys_membarrier(int cmd, int flags);
+ 
+ asmlinkage long sys_mlock2(unsigned long start, size_t len, int flags);
++asmlinkage long sys_getproctimes(pid_t pid, struct proctimes __user * time);
+ 
+ #endif
+diff -Nur linux-4.4.102/kernel/sys.c linux-4.4.102-new/kernel/sys.c
+--- linux-4.4.102/kernel/sys.c	2017-11-24 18:26:29.000000000 +0800
++++ linux-4.4.102-new/kernel/sys.c	2018-03-28 06:50:53.095020278 +0800
+@@ -2363,6 +2363,81 @@
+ 
+ 	return 0;
+ }
++/*
++SYSCALL_DEFINE5(getproctimes, pid_t, pid, int, flag, int, nicevalue, void __user*, prio, void __user*, nice){
++	struct pid * kpid;
++	struct stask_struct * task;
++	int nicebef;
++	int priobef;
++	kpid = find_get_pid(pid);
++	task = pid_task(kpid, PIDTYPE_PID);
++	nicebef = task_nice(task);
++	priobef = task_prio(task);
++	
++	if(flag == 1){
++		set_user_nice(task, nicevalue);
++		printk("nice value before: %d, nice value after: %d\n", nicebef, nicevalue);
++		return 0;
++	}else if(flag == 0){
++		copy_to_user(nice, (const void*)&nicebef, sizeof(nicebef));
++		copy_to_user(prio, (const void*)&priobef, sizeof(priobef));
++		printk("nice value of this process: %d\n", nicebef);
++		printk("prio value of this process: %d\n", priobef);
++		return 0;
++	}
++	printk("error input! input agian!!\n");
++	return EFAULT;
++}*/
++
++SYSCALL_DEFINE2(getproctimes, pid_t, pid, struct proctimes __user*, time){
++	printk("This getpoctimes syscall is created by Tianyi Liu!\n");
++	struct pid * kpid;
++	struct stask_struct * task;
++	struct proctimes tmp;
++	if(pid !=0){
++		kpid = find_get_pid(pid);
++        	if(kpid == NULL)
++			return EINVAL;
++		task = pid_task(kpid, PIDTYPE_PID);
++	}else{
++		task = current;
++	}
++ 	//---------for proc------------	
++	struct timeval ktv;
++	do_gettimeofday(&ktv);
++	tmp.proc.start_time		= task_start_time(task);
++	tmp.proc.real_time		= ktv.tv_sec * 1000000 + ktv.tv_usec;
++	/*tmp.proc.user_time		= task_utime(task);
++	tmp.proc.sys_time		= task_stime(task);	
++	tmp.proc.pid 			= task_pid_nr(task);
++	
++	int i=0;
++        for(i=0;i<16;i++)
++		tmp.proc.name[i] 	= task->comm[i];
++	--------for parent_proc---------------	
++	tmp.parent_proc.start_time	= task_start_time(task->parent);
++	tmp.parent_proc.real_time	= ktv.tv_sec * 1000000 + ktv.tv_usec;
++	tmp.parent_proc.user_time	= task_utime(task->parent);
++	tmp.parent_proc.sys_time	= task_stime(task->parent);	
++	tmp.parent_proc.pid 		= task_pid_nr(task->parent);
++	
++        for(i=0;i<16;i++)
++		tmp.parent_proc.name[i] = task->parent->comm[i];
++
++	--------for oldest_child_proc---------------
++	struct task_struct oldest_child = eldest_child(task);	
++	tmp.oldest_child_proc.start_time= task_start_time(oldest_child);
++	tmp.oldest_child_proc.real_time	= ktv.tv_sec * 1000000 + ktv.tv_usec;
++	tmp.oldest_child_proc.user_time	= task_utime(oldest_child);
++	tmp.oldest_child_proc.sys_time	= task_stime(oldest_child);	
++	tmp.oldest_child_proc.pid 	= task_pid_nr(oldest_child);
++	
++        for(i=0;i<16;i++)
++		tmp.oldest_child_proc.name[i] 	= oldest_child->comm[i];*/
++	
++	copy_to_user(time, (const void*)&tmp, sizeof(tmp));
++	return 0;
++}
+ 
+ #ifdef CONFIG_COMPAT
+ struct compat_sysinfo {
